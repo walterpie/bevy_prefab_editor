@@ -1,51 +1,524 @@
 use std::fs;
+use std::path::Path;
 
+use bevy::asset::AssetServerError;
+use bevy::ecs::IntoThreadLocalSystem;
+use bevy::input::mouse::*;
 use bevy::prelude::*;
-use bevy::render::render_graph::base::MainPass;
+use bevy::property::DynamicProperties;
+use bevy::scene;
 use bevy::type_registry::*;
+use bevy_fly_camera::*;
+use bevy_mod_picking::*;
+use hashbrown::HashMap;
+use ron::Error as WriteError;
 
+use bevy_prefab_editor::editor::*;
+use bevy_prefab_editor::entity::*;
 use bevy_prefab_editor::*;
 
-#[derive(Default)]
+pub type EditorCommand = Box<dyn FnOnce(&mut World, &Resources) + Send + Sync + 'static>;
+
 pub struct Editor {
-    world: World,
-    registry: TypeRegistry,
+    entity_map: HashMap<u32, Entity>,
+    next_entity: u32,
+    current_entity: Option<usize>,
+    scene: Handle<Scene>,
+}
+
+impl Editor {
+    pub fn write<P: AsRef<Path>>(
+        &self,
+        path: P,
+        registry: &TypeRegistry,
+        assets: &Assets<Scene>,
+    ) -> Result<(), WriteError> {
+        let scene = assets.get(&self.scene).unwrap();
+        let property = registry.property.read();
+        fs::write(path, scene.serialize_ron(&property)?)?;
+        Ok(())
+    }
+
+    pub fn read<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        world: &mut World,
+        resources: &Resources,
+    ) -> Result<(), AssetServerError> {
+        let asset_server = resources.get::<AssetServer>().unwrap();
+        let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+        let registry = resources.get::<TypeRegistry>().unwrap();
+        let handle = asset_server.load_sync(&mut assets, path)?;
+        let scene = assets.get(&handle).unwrap();
+
+        let component_registry = registry.component.read();
+
+        self.next_entity = 0;
+        for scene_entity in &scene.entities {
+            let entity = world.spawn(WidgetComponents::new(self.next_entity));
+            for component in &scene_entity.components {
+                let registration = component_registry
+                    .get_with_name(&component.type_name)
+                    .unwrap();
+                registration.add_component_to_entity(world, resources, entity, component);
+            }
+            let next_entity = self.next_entity;
+            self.entity_map.insert(next_entity, entity);
+        }
+
+        self.scene = handle;
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct EditorCommands {
+    next_entity: u32,
+    current_entity: Option<u32>,
+    queue: Vec<EditorCommand>,
+}
+
+impl EditorCommands {
+    pub fn apply(&mut self, world: &mut World, resources: &Resources) {
+        self.current_entity = None;
+        for command in self.queue.drain(..) {
+            command(world, resources)
+        }
+    }
+
+    pub fn spawn(&mut self, components: EditorBundle) -> &mut Self {
+        self.queue.push(Box::new(move |world, resources| {
+            let mut editor = resources.get_mut::<Editor>().unwrap();
+            let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+            let registry = resources.get::<TypeRegistry>().unwrap();
+            let component_registry = registry.component.read();
+
+            let scene = assets.get_mut(&editor.scene).unwrap();
+            editor.current_entity = Some(scene.entities.len());
+
+            let components = components.into_inner();
+
+            let entity = world.spawn(WidgetComponents::new(editor.next_entity));
+            for component in &components {
+                let registration = component_registry
+                    .get_with_name(&component.type_name)
+                    .unwrap();
+                registration.add_component_to_entity(world, resources, entity, component);
+            }
+
+            let next_entity = editor.next_entity;
+            editor.entity_map.insert(next_entity, entity);
+            scene.entities.push(scene::Entity {
+                entity: editor.next_entity,
+                components,
+            });
+            editor.next_entity += 1;
+        }));
+        self.current_entity = Some(self.next_entity);
+        self.next_entity += 1;
+        self
+    }
+
+    pub fn with(&mut self, component: DynamicProperties) -> &mut Self {
+        self.queue.push(Box::new(move |_world, resources| {
+            let editor = resources.get::<Editor>().unwrap();
+            let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+
+            let scene = assets.get_mut(&editor.scene).unwrap();
+            let current_entity = editor.current_entity.expect("no current entity found");
+            scene.entities[current_entity].components.add(component);
+        }));
+        self
+    }
+
+    pub fn with_bundle(&mut self, bundle: EditorBundle) -> &mut Self {
+        self.queue.push(Box::new(move |_world, resources| {
+            let editor = resources.get::<Editor>().unwrap();
+            let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+
+            let scene = assets.get_mut(&editor.scene).unwrap();
+            let current_entity = editor.current_entity.expect("no current entity found");
+            scene.entities[current_entity]
+                .components
+                .add_bundle(bundle.into_inner());
+        }));
+        self
+    }
+
+    pub fn insert_one(&mut self, entity: u32, component: DynamicProperties) -> &mut Self {
+        self.queue.push(Box::new(move |_world, resources| {
+            let editor = resources.get::<Editor>().unwrap();
+            let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+
+            let scene = assets.get_mut(&editor.scene).unwrap();
+            scene.entities[entity as usize].components.add(component);
+        }));
+        self
+    }
+}
+
+impl FromResources for Editor {
+    fn from_resources(resources: &Resources) -> Self {
+        let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+        let scene = assets.add(Scene::default());
+        Self {
+            entity_map: HashMap::new(),
+            next_entity: 0,
+            current_entity: None,
+            scene,
+        }
+    }
 }
 
 fn main() {
-    App::build()
+    let mut builder = App::build();
+    builder
         .add_default_plugins()
+        .add_plugin(FlyCameraPlugin)
+        .add_plugin(PickingPlugin)
+        .register_component::<Asset<Mesh>>()
+        .register_component::<IntoAsset<Color, StandardMaterial>>()
+        .register_component::<DefaultComponent<GlobalTransform>>()
+        .add_event::<EditorEvent>()
         .init_resource::<Editor>()
+        .init_resource::<EditorCommands>()
+        .init_resource::<EditorMode>()
         .add_startup_system(setup.system())
+        .add_startup_system(setup_thread_local.thread_local_system())
+        .add_system(save_system.system())
+        .add_system(camera_system.system());
+    let resources = builder.resources_mut();
+    let input_system = InputSystem::default().system(resources);
+    builder.add_system(input_system);
+    let resources = builder.resources_mut();
+    let update_system = UpdateSystem::default().system(resources);
+    builder
+        .add_system(update_system)
+        .add_system_to_stage(stage::POST_UPDATE, apply_system.thread_local_system())
+        .add_system_to_stage(stage::LAST, load_asset_system::<Mesh>.system())
+        .add_system_to_stage(
+            stage::LAST,
+            into_asset_system::<Color, StandardMaterial>.system(),
+        )
+        .add_system_to_stage(
+            stage::LAST,
+            default_component_system::<GlobalTransform>.system(),
+        )
         .run();
 }
 
-fn setup(mut res: ResMut<Editor>) {
-    res.registry.register_component::<Asset<Mesh>>();
-    res.registry
-        .register_component::<IntoAsset<Color, StandardMaterial>>();
-    res.registry.register_component::<MainPass>();
-    res.registry.register_component::<Draw>();
-    res.registry.register_component::<RenderPipelines>();
-    res.registry.register_component::<Transform>();
-    res.registry
-        .register_component::<DefaultComponent<GlobalTransform>>();
+fn setup(mut commands: Commands, _editor: ResMut<EditorCommands>) {
+    commands
+        .spawn(Camera3dComponents::default())
+        .with(FlyCamera::default())
+        .with(PickSource::default());
 
-    // we really only have to create this because of RenderPipelines
-    let pbr = PbrComponents::default();
-    res.world.spawn((
-        Asset::<Mesh>::new("assets/bed.gltf"),
-        IntoAsset::<_, StandardMaterial>::new(Color::rgb(1.0, 1.0, 1.0)),
-        pbr.main_pass,
-        pbr.draw,
-        pbr.render_pipelines,
-        pbr.transform,
-        DefaultComponent::<GlobalTransform>::new(),
-    ));
+    // let mut pbr = DefaultBundle("PbrComponents").default().unwrap();
+    // pbr.add(Asset::<Mesh>::new("assets/bed.gltf").to_dynamic());
+    // pbr.add(IntoAsset::<_, StandardMaterial>::new(Color::rgb(1.0, 1.0, 1.0)).to_dynamic());
+    // let mut light = DefaultBundle("LightComponents").default().unwrap();
+    // light.add(Light::default().to_dynamic());
+    // light.add(Transform::from_translation(Vec3::new(5.0, 5.0, 5.0)).to_dynamic());
+    // light.add(DefaultComponent::<GlobalTransform>::default().to_dynamic());
+    // editor.spawn(pbr).spawn(light);
+}
 
-    let component = res.registry.component.read();
-    let scene = Scene::from_world(&res.world, &component);
+fn setup_thread_local(world: &mut World, resources: &mut Resources) {
+    let mut editor = resources.get_mut::<Editor>().unwrap();
+    editor.read("assets/prefab.scn", world, resources).unwrap();
+}
 
-    let property = res.registry.property.read();
-    fs::write("assets/prefab.scn", scene.serialize_ron(&property).unwrap()).unwrap();
+fn camera_system(input: Res<Input<KeyCode>>, mut query: Query<Mut<FlyCamera>>) {
+    if input.just_pressed(KeyCode::Q) {
+        for mut fly_camera in &mut query.iter() {
+            fly_camera.enabled = !fly_camera.enabled;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransformMode {
+    Translate,
+    Rotate,
+    Scale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct EditorMode {
+    mouse: bool,
+    transform: Option<TransformMode>,
+    axis: Option<Axis>,
+    decimal: Option<i32>,
+    value: f32,
+}
+
+struct InputSystem {
+    multiplier: f32,
+    motion: EventReader<MouseMotion>,
+    wheel: EventReader<MouseWheel>,
+}
+
+impl InputSystem {
+    pub fn system(self, resources: &mut Resources) -> Box<dyn System> {
+        let system = input_system.system();
+        resources.insert_local(system.id(), self);
+        system
+    }
+}
+
+impl Default for InputSystem {
+    fn default() -> Self {
+        Self {
+            multiplier: 0.001,
+            motion: Default::default(),
+            wheel: Default::default(),
+        }
+    }
+}
+
+fn input_system(
+    mut state: Local<InputSystem>,
+    input: Res<Input<KeyCode>>,
+    mut mode: ResMut<EditorMode>,
+    mut events: ResMut<Events<EditorEvent>>,
+    motion: Res<Events<MouseMotion>>,
+    wheel: Res<Events<MouseWheel>>,
+) {
+    if input.just_pressed(KeyCode::T) {
+        if mode.transform == Some(TransformMode::Translate) {
+            mode.mouse = !mode.mouse;
+        }
+        mode.transform = Some(TransformMode::Translate);
+    }
+    if input.just_pressed(KeyCode::R) {
+        if mode.transform == Some(TransformMode::Rotate) {
+            mode.mouse = !mode.mouse;
+        }
+        mode.transform = Some(TransformMode::Rotate);
+    }
+    if input.just_pressed(KeyCode::S) {
+        if mode.transform == Some(TransformMode::Scale) {
+            mode.mouse = !mode.mouse;
+        }
+        mode.transform = Some(TransformMode::Scale);
+    }
+    if input.just_pressed(KeyCode::Return) {
+        mode.mouse = false;
+        mode.transform = None;
+        mode.axis = None;
+        mode.decimal = None;
+        mode.value = 0.0;
+    }
+    if input.just_pressed(KeyCode::X) {
+        mode.axis = Some(Axis::X);
+    }
+    if input.just_pressed(KeyCode::Y) {
+        mode.axis = Some(Axis::Y);
+    }
+    if input.just_pressed(KeyCode::Z) {
+        mode.axis = Some(Axis::Z);
+    }
+    if input.just_pressed(KeyCode::Period) {
+        mode.decimal = Some(0);
+    }
+
+    let mouse_mode = mode.mouse;
+
+    if mouse_mode {
+        let mut transform = |delta| {
+            mode.value += delta;
+            match mode.transform {
+                Some(TransformMode::Translate) => {
+                    let value = match mode.axis {
+                        Some(Axis::X) => Vec3::new(delta, 0.0, 0.0),
+                        Some(Axis::Y) => Vec3::new(0.0, delta, 0.0),
+                        Some(Axis::Z) => Vec3::new(0.0, 0.0, delta),
+                        None => Vec3::zero(),
+                    };
+                    let event = EditorEvent::Translate(value);
+                    events.send(event);
+                }
+                Some(TransformMode::Rotate) => {
+                    let value = match mode.axis {
+                        Some(Axis::X) => Quat::from_rotation_x(delta),
+                        Some(Axis::Y) => Quat::from_rotation_y(delta),
+                        Some(Axis::Z) => Quat::from_rotation_z(delta),
+                        None => Quat::identity(),
+                    };
+                    let event = EditorEvent::Rotate(value);
+                    events.send(event);
+                }
+                Some(TransformMode::Scale) => {
+                    let value = match mode.axis {
+                        Some(Axis::X) => Vec3::new(delta, 1.0, 1.0),
+                        Some(Axis::Y) => Vec3::new(1.0, delta, 1.0),
+                        Some(Axis::Z) => Vec3::new(1.0, 1.0, delta),
+                        None => Vec3::zero(),
+                    };
+                    let event = EditorEvent::Scale(value);
+                    events.send(event);
+                }
+                None => {}
+            }
+        };
+
+        for wheel in state.wheel.iter(&wheel) {
+            let delta = match wheel.unit {
+                MouseScrollUnit::Line => wheel.y * 0.003,
+                MouseScrollUnit::Pixel => wheel.y * 0.00025,
+            };
+            state.multiplier += delta;
+            state.multiplier = state.multiplier.max(0.001);
+        }
+
+        for motion in state.motion.iter(&motion) {
+            transform(motion.delta.x() * state.multiplier);
+        }
+    } else {
+        let mut transform = |digit| {
+            let prev_value = mode.value;
+            match &mut mode.decimal {
+                Some(digits) => {
+                    *digits += 1;
+                    mode.value += 10.0_f32.powi(-*digits) * digit;
+                }
+                None => {
+                    mode.value *= 10.0;
+                    mode.value += digit;
+                }
+            }
+            let delta = mode.value - prev_value;
+            match mode.transform {
+                Some(TransformMode::Translate) => {
+                    let value = match mode.axis {
+                        Some(Axis::X) => Vec3::new(delta, 0.0, 0.0),
+                        Some(Axis::Y) => Vec3::new(0.0, delta, 0.0),
+                        Some(Axis::Z) => Vec3::new(0.0, 0.0, delta),
+                        None => Vec3::zero(),
+                    };
+                    let event = EditorEvent::Translate(value);
+                    events.send(event);
+                }
+                Some(TransformMode::Rotate) => {
+                    let value = match mode.axis {
+                        Some(Axis::X) => Quat::from_rotation_x(delta),
+                        Some(Axis::Y) => Quat::from_rotation_y(delta),
+                        Some(Axis::Z) => Quat::from_rotation_z(delta),
+                        None => Quat::identity(),
+                    };
+                    let event = EditorEvent::Rotate(value);
+                    events.send(event);
+                }
+                Some(TransformMode::Scale) => {
+                    let value = match mode.axis {
+                        Some(Axis::X) => Vec3::new(delta, 1.0, 1.0),
+                        Some(Axis::Y) => Vec3::new(1.0, delta, 1.0),
+                        Some(Axis::Z) => Vec3::new(1.0, 1.0, delta),
+                        None => Vec3::zero(),
+                    };
+                    let event = EditorEvent::Scale(value);
+                    events.send(event);
+                }
+                None => {}
+            }
+        };
+
+        if input.just_pressed(KeyCode::Key1) {
+            transform(1.0);
+        }
+        if input.just_pressed(KeyCode::Key2) {
+            transform(2.0);
+        }
+        if input.just_pressed(KeyCode::Key3) {
+            transform(3.0);
+        }
+        if input.just_pressed(KeyCode::Key4) {
+            transform(4.0);
+        }
+        if input.just_pressed(KeyCode::Key5) {
+            transform(5.0);
+        }
+        if input.just_pressed(KeyCode::Key6) {
+            transform(6.0);
+        }
+        if input.just_pressed(KeyCode::Key7) {
+            transform(7.0);
+        }
+        if input.just_pressed(KeyCode::Key8) {
+            transform(8.0);
+        }
+        if input.just_pressed(KeyCode::Key9) {
+            transform(9.0);
+        }
+        if input.just_pressed(KeyCode::Key0) {
+            transform(0.0);
+        }
+    }
+}
+
+#[derive(Default)]
+struct UpdateSystem {
+    reader: EventReader<EditorEvent>,
+}
+
+impl UpdateSystem {
+    pub fn system(self, resources: &mut Resources) -> Box<dyn System> {
+        let system = update_system.system();
+        resources.insert_local(system.id(), self);
+        system
+    }
+}
+
+fn update_system(
+    mut state: Local<UpdateSystem>,
+    mut editor: ResMut<EditorCommands>,
+    events: Res<Events<EditorEvent>>,
+    mut query: Query<(&Widget, &SelectablePickMesh, Mut<Transform>)>,
+) {
+    for (widget, select, mut transform) in &mut query.iter() {
+        if select.selected() {
+            for event in state.reader.iter(&events) {
+                match event {
+                    EditorEvent::Translate(value) => {
+                        transform.translate(*value);
+                        editor.insert_one(widget.0, transform.to_dynamic());
+                    }
+                    EditorEvent::Rotate(value) => {
+                        transform.rotate(*value);
+                        editor.insert_one(widget.0, transform.to_dynamic());
+                    }
+                    EditorEvent::Scale(value) => {
+                        transform.apply_non_uniform_scale(*value);
+                        editor.insert_one(widget.0, transform.to_dynamic());
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
+fn apply_system(world: &mut World, resources: &mut Resources) {
+    let mut commands = resources.get_mut::<EditorCommands>().unwrap();
+    commands.apply(world, resources);
+}
+
+fn save_system(
+    input: Res<Input<KeyCode>>,
+    editor: Res<Editor>,
+    registry: Res<TypeRegistry>,
+    assets: Res<Assets<Scene>>,
+) {
+    if input.pressed(KeyCode::LControl) && input.just_pressed(KeyCode::S) {
+        editor
+            .write("assets/prefab.scn", &registry, &assets)
+            .unwrap();
+    }
 }

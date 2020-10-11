@@ -3,70 +3,22 @@
     entity: 0,
     components: [
       {
-        "type": "Transform",
+        "type": "Asset<Mesh>",
         "map": {
-          "value": {
-            "type": "glam::f32::mat4::Mat4",
-            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
-          },
+          "path": "assets/bed.gltf",
         },
       },
       {
-        "type": "RenderPipelines",
+        "type": "IntoAsset<Color, StandardMaterial>",
         "map": {
-          "pipelines": {
-            "type": "alloc::vec::Vec<bevy_render::pipeline::render_pipelines::RenderPipeline>",
-            "seq": [
-              {
-                "type": "bevy_render::pipeline::render_pipelines::RenderPipeline",
-                "map": {
-                  "pipeline": {
-                    "type": "bevy_asset::handle::Handle<bevy_render::pipeline::pipeline::PipelineDescriptor>",
-                    "map": {
-                      "id": {
-                        "type": "bevy_asset::handle::HandleId",
-                        "value": ("62ead31f-8d8e-4959-bf6b-8e95155e0704"),
-                      },
-                    },
-                  },
-                  "specialization": {
-                    "type": "bevy_render::pipeline::pipeline_compiler::PipelineSpecialization",
-                    "map": {
-                      "shader_specialization": {
-                        "type": "bevy_render::pipeline::pipeline_compiler::ShaderSpecialization",
-                        "value": (
-                          shader_defs: [],
-                        ),
-                      },
-                      "primitive_topology": {
-                        "type": "bevy_render::pipeline::state_descriptors::PrimitiveTopology",
-                        "value": TriangleList,
-                      },
-                      "dynamic_bindings": {
-                        "type": "alloc::vec::Vec<bevy_render::pipeline::pipeline_compiler::DynamicBinding>",
-                        "seq": [
-                          {
-                            "type": "bevy_render::pipeline::pipeline_compiler::DynamicBinding",
-                            "value": (
-                              bind_group: 2,
-                              binding: 0,
-                            ),
-                          },
-                          {
-                            "type": "bevy_render::pipeline::pipeline_compiler::DynamicBinding",
-                            "value": (
-                              bind_group: 3,
-                              binding: 0,
-                            ),
-                          },
-                        ],
-                      },
-                      "sample_count": 1,
-                    },
-                  },
-                },
-              },
-            ],
+          "t": {
+            "type": "Color",
+            "value": (
+              red: 1.0,
+              green: 1.0,
+              blue: 1.0,
+              alpha: 1.0,
+            ),
           },
         },
       },
@@ -78,22 +30,78 @@
         },
       },
       {
-        "type": "Asset<Mesh>",
+        "type": "MainPass",
+        "map": {},
+      },
+      {
+        "type": "RenderPipelines",
         "map": {
-          "path": "assets/bed.gltf",
+          "pipelines": {
+            "type": "alloc::vec::Vec<bevy_render::pipeline::render_pipelines::RenderPipeline>",
+            "seq": [
+              {
+                "type": "bevy_render::pipeline::render_pipelines::RenderPipeline",
+                "map": {
+                  "pipeline": {
+                    "type": "Handle<PipelineDescriptor>",
+                    "map": {
+                      "id": {
+                        "type": "HandleId",
+                        "value": ("62ead31f-8d8e-4959-bf6b-8e95155e0704"),
+                      },
+                    },
+                  },
+                  "specialization": {
+                    "type": "PipelineSpecialization",
+                    "map": {
+                      "shader_specialization": {
+                        "type": "ShaderSpecialization",
+                        "value": (
+                          shader_defs: [],
+                        ),
+                      },
+                      "primitive_topology": {
+                        "type": "PrimitiveTopology",
+                        "value": TriangleList,
+                      },
+                      "dynamic_bindings": {
+                        "type": "alloc::vec::Vec<bevy_render::pipeline::pipeline_compiler::DynamicBinding>",
+                        "seq": [
+                          {
+                            "type": "DynamicBinding",
+                            "value": (
+                              bind_group: 2,
+                              binding: 0,
+                            ),
+                          },
+                          {
+                            "type": "DynamicBinding",
+                            "value": (
+                              bind_group: 3,
+                              binding: 0,
+                            ),
+                          },
+                        ],
+                      },
+                      "index_format": {
+                        "type": "IndexFormat",
+                        "value": Uint32,
+                      },
+                      "sample_count": 1,
+                    },
+                  },
+                },
+              },
+            ],
+          },
         },
       },
       {
-        "type": "IntoAsset<Color, StandardMaterial>",
+        "type": "Transform",
         "map": {
-          "t": {
-            "type": "bevy_render::color::Color",
-            "value": (
-              r: 1.0,
-              g: 1.0,
-              b: 1.0,
-              a: 1.0,
-            ),
+          "value": {
+            "type": "Mat4",
+            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
           },
         },
       },
@@ -102,7 +110,70 @@
         "map": {},
       },
       {
-        "type": "MainPass",
+        "type": "Transform",
+        "map": {
+          "value": {
+            "type": "Mat4",
+            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -2.421001, 1.0),
+          },
+        },
+      },
+      {
+        "type": "Transform",
+        "map": {
+          "value": {
+            "type": "Mat4",
+            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -8.385001, -2.659002, -2.421001, 1.0),
+          },
+        },
+      },
+      {
+        "type": "Transform",
+        "map": {
+          "value": {
+            "type": "Mat4",
+            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.23599455, -2.659002, -2.421001, 1.0),
+          },
+        },
+      },
+    ],
+  ),
+  (
+    entity: 1,
+    components: [
+      {
+        "type": "Light",
+        "map": {
+          "color": {
+            "type": "Color",
+            "value": (
+              red: 1.0,
+              green: 1.0,
+              blue: 1.0,
+              alpha: 1.0,
+            ),
+          },
+          "fov": 1.0471976,
+          "depth": {
+            "type": "Range<f32>",
+            "value": (
+              start: 0.1,
+              end: 50.0,
+            ),
+          },
+        },
+      },
+      {
+        "type": "Transform",
+        "map": {
+          "value": {
+            "type": "Mat4",
+            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 5.0, 5.0, 1.0),
+          },
+        },
+      },
+      {
+        "type": "DefaultComponent<GlobalTransform>",
         "map": {},
       },
     ],

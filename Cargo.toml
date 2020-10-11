@@ -5,7 +5,20 @@ authors = ["Szymon Walter <waltersz@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
-bevy = "0.2"
+ron = "0.6"
+hashbrown = "0.9"
 
-[dev-dependencies]
-bevy_fly_camera = "0.4"
+[dependencies.bevy]
+version = "0.2"
+git = "https://github.com/walterpie/bevy"
+branch = "master"
+
+[dependencies.bevy_mod_picking]
+version = "0.2"
+git = "https://github.com/walterpie/bevy_mod_picking"
+branch = "master"
+
+[dependencies.bevy_fly_camera]
+version = "0.4"
+git = "https://github.com/walterpie/bevy_fly_camera"
+branch = "master"

@@ -11,9 +11,15 @@ fn main() {
         .register_component::<IntoAsset<Color, StandardMaterial>>()
         .register_component::<DefaultComponent<GlobalTransform>>()
         .add_startup_system(setup.system())
-        .add_system(load_asset_system::<Mesh>.system())
-        .add_system(into_asset_system::<Color, StandardMaterial>.system())
-        .add_system(default_component_system::<GlobalTransform>.system())
+        .add_system_to_stage(stage::LAST, load_asset_system::<Mesh>.system())
+        .add_system_to_stage(
+            stage::LAST,
+            into_asset_system::<Color, StandardMaterial>.system(),
+        )
+        .add_system_to_stage(
+            stage::LAST,
+            default_component_system::<GlobalTransform>.system(),
+        )
         .run();
 }
 
@@ -23,10 +29,6 @@ fn setup(
     mut scene_spawner: ResMut<SceneSpawner>,
 ) {
     commands
-        .spawn(LightComponents {
-            transform: Transform::from_translation(Vec3::new(5.0, 5.0, 5.0)),
-            ..Default::default()
-        })
         .spawn(Camera3dComponents::default())
         .with(FlyCamera::default());
     let handle = asset_server.load::<Scene, _>("assets/prefab.scn").unwrap();

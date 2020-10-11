@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 
 use bevy::prelude::*;
-use bevy::property::*;
-use bevy::type_registry::*;
+
+pub mod editor;
+pub mod entity;
 
 #[derive(Debug, Properties)]
 pub struct Asset<T: Send + Sync + 'static> {
@@ -72,22 +73,6 @@ impl<T: Default + Send + Sync + 'static> DefaultComponent<T> {
 impl<T: Default + Send + Sync + 'static> Default for DefaultComponent<T> {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub trait TypeRegistryExt {
-    fn register_component<T>(&self)
-    where
-        T: Property + DeserializeProperty + Properties + Component + FromResources;
-}
-
-impl TypeRegistryExt for TypeRegistry {
-    fn register_component<T>(&self)
-    where
-        T: Property + DeserializeProperty + Properties + Component + FromResources,
-    {
-        self.property.write().register::<T>();
-        self.component.write().register::<T>();
     }
 }
 
