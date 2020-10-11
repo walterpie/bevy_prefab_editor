@@ -1,8 +1,11 @@
 [package]
-name = "bevy_scene_editor"
+name = "bevy_prefab_editor"
 version = "0.1.0"
 authors = ["Szymon Walter <waltersz@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
 bevy = "0.2"
+
+[dev-dependencies]
+bevy_fly_camera = "0.4"

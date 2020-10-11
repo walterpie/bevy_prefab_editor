@@ -1,0 +1,110 @@
+[
+  (
+    entity: 0,
+    components: [
+      {
+        "type": "Transform",
+        "map": {
+          "value": {
+            "type": "glam::f32::mat4::Mat4",
+            "value": (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+          },
+        },
+      },
+      {
+        "type": "RenderPipelines",
+        "map": {
+          "pipelines": {
+            "type": "alloc::vec::Vec<bevy_render::pipeline::render_pipelines::RenderPipeline>",
+            "seq": [
+              {
+                "type": "bevy_render::pipeline::render_pipelines::RenderPipeline",
+                "map": {
+                  "pipeline": {
+                    "type": "bevy_asset::handle::Handle<bevy_render::pipeline::pipeline::PipelineDescriptor>",
+                    "map": {
+                      "id": {
+                        "type": "bevy_asset::handle::HandleId",
+                        "value": ("62ead31f-8d8e-4959-bf6b-8e95155e0704"),
+                      },
+                    },
+                  },
+                  "specialization": {
+                    "type": "bevy_render::pipeline::pipeline_compiler::PipelineSpecialization",
+                    "map": {
+                      "shader_specialization": {
+                        "type": "bevy_render::pipeline::pipeline_compiler::ShaderSpecialization",
+                        "value": (
+                          shader_defs: [],
+                        ),
+                      },
+                      "primitive_topology": {
+                        "type": "bevy_render::pipeline::state_descriptors::PrimitiveTopology",
+                        "value": TriangleList,
+                      },
+                      "dynamic_bindings": {
+                        "type": "alloc::vec::Vec<bevy_render::pipeline::pipeline_compiler::DynamicBinding>",
+                        "seq": [
+                          {
+                            "type": "bevy_render::pipeline::pipeline_compiler::DynamicBinding",
+                            "value": (
+                              bind_group: 2,
+                              binding: 0,
+                            ),
+                          },
+                          {
+                            "type": "bevy_render::pipeline::pipeline_compiler::DynamicBinding",
+                            "value": (
+                              bind_group: 3,
+                              binding: 0,
+                            ),
+                          },
+                        ],
+                      },
+                      "sample_count": 1,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+      {
+        "type": "Draw",
+        "map": {
+          "is_visible": true,
+          "is_transparent": false,
+        },
+      },
+      {
+        "type": "Asset<Mesh>",
+        "map": {
+          "path": "assets/bed.gltf",
+        },
+      },
+      {
+        "type": "IntoAsset<Color, StandardMaterial>",
+        "map": {
+          "t": {
+            "type": "bevy_render::color::Color",
+            "value": (
+              r: 1.0,
+              g: 1.0,
+              b: 1.0,
+              a: 1.0,
+            ),
+          },
+        },
+      },
+      {
+        "type": "DefaultComponent<GlobalTransform>",
+        "map": {},
+      },
+      {
+        "type": "MainPass",
+        "map": {},
+      },
+    ],
+  ),
+]
