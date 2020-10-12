@@ -10,23 +10,30 @@ use bevy::render::{
     pipeline::{DynamicBinding, PipelineSpecialization, RenderPipeline, RenderPipelines},
     render_graph::base::MainPass,
 };
+use bevy::type_registry::*;
 
 use super::*;
 
 pub trait ComponentsExt {
-    fn add(&mut self, component: DynamicProperties);
+    fn add(&mut self, component: DynamicProperties, registry: &ComponentRegistry);
 
-    fn add_bundle<I: IntoIterator<Item = DynamicProperties>>(&mut self, other: I) {
+    fn add_bundle<I: IntoIterator<Item = DynamicProperties>>(
+        &mut self,
+        other: I,
+        registry: &ComponentRegistry,
+    ) {
         for component in other {
-            self.add(component);
+            self.add(component, registry);
         }
     }
 }
 
 impl ComponentsExt for Vec<DynamicProperties> {
-    fn add(&mut self, component: DynamicProperties) {
+    fn add(&mut self, component: DynamicProperties, registry: &ComponentRegistry) {
+        let a = registry.get_with_name(&component.type_name).unwrap().ty;
         for other in &mut *self {
-            if component.type_name == other.type_name {
+            let b = registry.get_with_name(&other.type_name).unwrap().ty;
+            if a == b {
                 other.apply(&component);
                 return;
             }
@@ -45,13 +52,17 @@ impl EditorBundle {
         Default::default()
     }
 
-    pub fn add(&mut self, component: DynamicProperties) -> &mut Self {
-        self.components.add(component);
+    pub fn add(&mut self, component: DynamicProperties, registry: &ComponentRegistry) -> &mut Self {
+        self.components.add(component, registry);
         self
     }
 
-    pub fn add_bundle<I: IntoIterator<Item = DynamicProperties>>(&mut self, other: I) -> &mut Self {
-        self.components.add_bundle(other);
+    pub fn add_bundle<I: IntoIterator<Item = DynamicProperties>>(
+        &mut self,
+        other: I,
+        registry: &ComponentRegistry,
+    ) -> &mut Self {
+        self.components.add_bundle(other, registry);
         self
     }
 
@@ -68,18 +79,24 @@ impl<'a> DefaultBundle<'a> {
         let bundle = match self.0 {
             "LightComponents" => {
                 let mut bundle = EditorBundle::default();
-                bundle.add(Light::default().to_dynamic());
-                bundle.add(Transform::default().to_dynamic());
-                bundle.add(DefaultComponent::<GlobalTransform>::default().to_dynamic());
+                bundle.components.push(Light::default().to_dynamic());
+                bundle.components.push(Transform::default().to_dynamic());
+                bundle
+                    .components
+                    .push(DefaultComponent::<GlobalTransform>::default().to_dynamic());
                 bundle
             }
             "PbrComponents" => {
                 let mut bundle = EditorBundle::default();
-                bundle.add(Asset::<Mesh>::default().to_dynamic());
-                bundle.add(IntoAsset::<Color, StandardMaterial>::default().to_dynamic());
-                bundle.add(Draw::default().to_dynamic());
-                bundle.add(MainPass::default().to_dynamic());
-                bundle.add(
+                bundle
+                    .components
+                    .push(Asset::<Mesh>::default().to_dynamic());
+                bundle
+                    .components
+                    .push(IntoAsset::<Color, StandardMaterial>::default().to_dynamic());
+                bundle.components.push(Draw::default().to_dynamic());
+                bundle.components.push(MainPass::default().to_dynamic());
+                bundle.components.push(
                     RenderPipelines::from_pipelines(vec![RenderPipeline::specialized(
                         FORWARD_PIPELINE_HANDLE,
                         PipelineSpecialization {
@@ -100,12 +117,36 @@ impl<'a> DefaultBundle<'a> {
                     )])
                     .to_dynamic(),
                 );
-                bundle.add(Transform::default().to_dynamic());
-                bundle.add(DefaultComponent::<GlobalTransform>::default().to_dynamic());
+                bundle.components.push(Transform::default().to_dynamic());
+                bundle
+                    .components
+                    .push(DefaultComponent::<GlobalTransform>::default().to_dynamic());
                 bundle
             }
             _ => return None,
         };
         Some(bundle)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DefaultProperty<'a>(pub &'a str);
+
+impl<'a> DefaultProperty<'a> {
+    pub fn default(self) -> Option<DynamicProperties> {
+        let component = match self.0 {
+            "Light" => Light::default().to_dynamic(),
+            "Transform" => Transform::default().to_dynamic(),
+            "GlobalTransform" => DefaultComponent::<GlobalTransform>::default().to_dynamic(),
+            "Asset<Mesh>" => Asset::<Mesh>::default().to_dynamic(),
+            "Into<Color, StandardMaterial>" => {
+                IntoAsset::<Color, StandardMaterial>::default().to_dynamic()
+            }
+            "Draw" => Draw::default().to_dynamic(),
+            "MainPass" => MainPass::default().to_dynamic(),
+            "RenderPipelines" => RenderPipelines::default().to_dynamic(),
+            _ => return None,
+        };
+        Some(component)
     }
 }

@@ -1,4 +1,5 @@
 use std::fs;
+use std::mem;
 use std::path::Path;
 
 use bevy::asset::AssetServerError;
@@ -13,9 +14,35 @@ use bevy_mod_picking::*;
 use hashbrown::HashMap;
 use ron::Error as WriteError;
 
+use bevy_prefab_editor::display::*;
 use bevy_prefab_editor::editor::*;
 use bevy_prefab_editor::entity::*;
 use bevy_prefab_editor::*;
+
+pub const BUTTON_NONE_MATERIAL: Handle<ColorMaterial> = Handle::from_bytes([
+    250, 189, 108, 221, 189, 142, 172, 126, 18, 121, 71, 114, 210, 186, 138, 64,
+]);
+
+pub const BUTTON_HOVERED_MATERIAL: Handle<ColorMaterial> = Handle::from_bytes([
+    161, 86, 132, 199, 157, 251, 102, 104, 177, 148, 191, 143, 237, 240, 172, 253,
+]);
+
+pub const BUTTON_CLICKED_MATERIAL: Handle<ColorMaterial> = Handle::from_bytes([
+    7, 231, 89, 151, 216, 39, 3, 222, 173, 114, 218, 131, 106, 223, 122, 201,
+]);
+
+pub const BUTTON_TOGGLED_MATERIAL: Handle<ColorMaterial> = Handle::from_bytes([
+    17, 203, 92, 43, 60, 26, 232, 74, 24, 150, 29, 168, 6, 235, 184, 74,
+]);
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct ButtonToggled(bool);
+
+#[derive(Debug, Clone, Copy)]
+pub enum ButtonFunction {
+    Save,
+    AddComponent,
+}
 
 pub type EditorCommand = Box<dyn FnOnce(&mut World, &Resources) + Send + Sync + 'static>;
 
@@ -82,7 +109,7 @@ impl EditorCommands {
     pub fn apply(&mut self, world: &mut World, resources: &Resources) {
         self.current_entity = None;
         for command in self.queue.drain(..) {
-            command(world, resources)
+            command(world, resources);
         }
     }
 
@@ -123,10 +150,14 @@ impl EditorCommands {
         self.queue.push(Box::new(move |_world, resources| {
             let editor = resources.get::<Editor>().unwrap();
             let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+            let registry = resources.get::<TypeRegistry>().unwrap();
+            let component_registry = registry.component.read();
 
             let scene = assets.get_mut(&editor.scene).unwrap();
             let current_entity = editor.current_entity.expect("no current entity found");
-            scene.entities[current_entity].components.add(component);
+            scene.entities[current_entity]
+                .components
+                .add(component, &component_registry);
         }));
         self
     }
@@ -135,12 +166,14 @@ impl EditorCommands {
         self.queue.push(Box::new(move |_world, resources| {
             let editor = resources.get::<Editor>().unwrap();
             let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+            let registry = resources.get::<TypeRegistry>().unwrap();
+            let component_registry = registry.component.read();
 
             let scene = assets.get_mut(&editor.scene).unwrap();
             let current_entity = editor.current_entity.expect("no current entity found");
             scene.entities[current_entity]
                 .components
-                .add_bundle(bundle.into_inner());
+                .add_bundle(bundle.into_inner(), &component_registry);
         }));
         self
     }
@@ -149,9 +182,57 @@ impl EditorCommands {
         self.queue.push(Box::new(move |_world, resources| {
             let editor = resources.get::<Editor>().unwrap();
             let mut assets = resources.get_mut::<Assets<Scene>>().unwrap();
+            let registry = resources.get::<TypeRegistry>().unwrap();
+            let component_registry = registry.component.read();
 
             let scene = assets.get_mut(&editor.scene).unwrap();
-            scene.entities[entity as usize].components.add(component);
+            scene.entities[entity as usize]
+                .components
+                .add(component, &component_registry);
+        }));
+        self
+    }
+
+    pub fn sync_to_world(&mut self, entity: u32) -> &mut Self {
+        self.queue.push(Box::new(move |world, resources| {
+            let editor = resources.get::<Editor>().unwrap();
+            let assets = resources.get_mut::<Assets<Scene>>().unwrap();
+            let registry = resources.get::<TypeRegistry>().unwrap();
+            let component_registry = registry.component.read();
+
+            let scene = assets.get(&editor.scene).unwrap();
+            let components = &scene.entities[entity as usize].components;
+
+            let world_entity = editor.entity_map[&entity];
+            for component in components {
+                let registration = component_registry
+                    .get_with_name(&component.type_name)
+                    .unwrap();
+                registration.add_component_to_entity(world, resources, world_entity, component);
+            }
+        }));
+        self
+    }
+
+    pub fn sync_one_to_world(&mut self, entity: u32, name: String) -> &mut Self {
+        self.queue.push(Box::new(move |world, resources| {
+            let editor = resources.get::<Editor>().unwrap();
+            let assets = resources.get_mut::<Assets<Scene>>().unwrap();
+            let registry = resources.get::<TypeRegistry>().unwrap();
+            let component_registry = registry.component.read();
+
+            let scene = assets.get(&editor.scene).unwrap();
+            let components = &scene.entities[entity as usize].components;
+
+            let world_entity = editor.entity_map[&entity];
+            for component in components {
+                if component.type_name == name {
+                    let registration = component_registry
+                        .get_with_name(&component.type_name)
+                        .unwrap();
+                    registration.add_component_to_entity(world, resources, world_entity, component);
+                }
+            }
         }));
         self
     }
@@ -186,7 +267,10 @@ fn main() {
         .add_startup_system(setup.system())
         .add_startup_system(setup_thread_local.thread_local_system())
         .add_system(save_system.system())
-        .add_system(camera_system.system());
+        .add_system(camera_system.system())
+        .add_system(button_enter_system.system())
+        .add_system(button_system.system())
+        .add_system(text_button_system.system());
     let resources = builder.resources_mut();
     let input_system = InputSystem::default().system(resources);
     builder.add_system(input_system);
@@ -207,11 +291,104 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, _editor: ResMut<EditorCommands>) {
+fn setup(
+    mut commands: Commands,
+    _editor: ResMut<EditorCommands>,
+    asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let font = asset_server
+        .load::<Font, _>("assets/TruenoLight-E2pg.ttf")
+        .unwrap();
+
+    materials.set(BUTTON_NONE_MATERIAL, Color::rgb(0.5, 0.5, 0.5).into());
+    materials.set(BUTTON_HOVERED_MATERIAL, Color::rgb(0.6, 0.6, 0.6).into());
+    materials.set(BUTTON_CLICKED_MATERIAL, Color::rgb(0.75, 0.75, 0.75).into());
+    materials.set(BUTTON_TOGGLED_MATERIAL, Color::rgb(0.3, 0.3, 0.3).into());
+
     commands
         .spawn(Camera3dComponents::default())
         .with(FlyCamera::default())
-        .with(PickSource::default());
+        .with(PickSource::default())
+        .spawn(UiCameraComponents::default())
+        .spawn(NodeComponents {
+            style: Style {
+                size: Size::new(Val::Percent(100.0), Val::Percent(100.0)),
+                justify_content: JustifyContent::FlexEnd,
+                ..Default::default()
+            },
+            material: materials.add(Color::NONE.into()),
+            ..Default::default()
+        })
+        .with_children(|parent| {
+            parent
+                .spawn(NodeComponents {
+                    style: Style {
+                        size: Size::new(Val::Percent(20.0), Val::Percent(100.0)),
+                        flex_direction: FlexDirection::ColumnReverse,
+                        flex_wrap: FlexWrap::Wrap,
+                        align_self: AlignSelf::FlexStart,
+                        align_items: AlignItems::Center,
+                        ..Default::default()
+                    },
+                    material: materials.add(Color::rgb(0.2, 0.2, 0.2).into()),
+                    ..Default::default()
+                })
+                .with_children(|parent| {
+                    parent
+                        .spawn(ButtonComponents {
+                            style: Style {
+                                size: Size::new(Val::Percent(80.0), Val::Px(30.0)),
+                                padding: Rect::all(Val::Percent(10.0)),
+                                justify_content: JustifyContent::SpaceAround,
+                                align_items: AlignItems::Center,
+                                ..Default::default()
+                            },
+                            material: BUTTON_NONE_MATERIAL,
+                            ..Default::default()
+                        })
+                        .with(ButtonFunction::Save)
+                        .with_children(|parent| {
+                            parent.spawn(TextComponents {
+                                text: Text {
+                                    value: "Save".to_string(),
+                                    font,
+                                    style: TextStyle {
+                                        font_size: 20.0,
+                                        color: Color::rgb(0.8, 0.8, 0.8),
+                                    },
+                                },
+                                ..Default::default()
+                            });
+                        })
+                        .spawn(ButtonComponents {
+                            style: Style {
+                                size: Size::new(Val::Percent(80.0), Val::Px(30.0)),
+                                padding: Rect::all(Val::Percent(10.0)),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..Default::default()
+                            },
+                            material: BUTTON_NONE_MATERIAL,
+                            ..Default::default()
+                        })
+                        .with(ButtonFunction::AddComponent)
+                        .with(ButtonToggled::default())
+                        .with_children(|parent| {
+                            parent.spawn(TextComponents {
+                                text: Text {
+                                    value: "Add component".to_string(),
+                                    font,
+                                    style: TextStyle {
+                                        font_size: 20.0,
+                                        color: Color::rgb(0.8, 0.8, 0.8),
+                                    },
+                                },
+                                ..Default::default()
+                            });
+                        });
+                });
+        });
 
     // let mut pbr = DefaultBundle("PbrComponents").default().unwrap();
     // pbr.add(Asset::<Mesh>::new("assets/bed.gltf").to_dynamic());
@@ -232,6 +409,119 @@ fn camera_system(input: Res<Input<KeyCode>>, mut query: Query<Mut<FlyCamera>>) {
     if input.just_pressed(KeyCode::Q) {
         for mut fly_camera in &mut query.iter() {
             fly_camera.enabled = !fly_camera.enabled;
+        }
+    }
+}
+
+fn button_system(
+    mut query: Query<
+        With<
+            Button,
+            (
+                Mutated<Interaction>,
+                Option<Mut<ButtonToggled>>,
+                Mut<Handle<ColorMaterial>>,
+                &ButtonFunction,
+            ),
+        >,
+    >,
+) {
+    for (interaction, mut toggled, mut material, _) in &mut query.iter() {
+        match *interaction {
+            Interaction::Clicked => {
+                if let Some(toggled) = &mut toggled {
+                    toggled.0 = !toggled.0;
+                    if toggled.0 {
+                        *material = BUTTON_TOGGLED_MATERIAL
+                    } else {
+                        *material = BUTTON_CLICKED_MATERIAL
+                    }
+                } else {
+                    *material = BUTTON_CLICKED_MATERIAL
+                }
+            }
+            Interaction::Hovered => *material = BUTTON_HOVERED_MATERIAL,
+            Interaction::None => *material = BUTTON_NONE_MATERIAL,
+        }
+    }
+}
+
+fn button_enter_system(
+    input: Res<Input<KeyCode>>,
+    mut query: Query<With<Button, (Mut<ButtonToggled>, &ButtonFunction)>>,
+) {
+    for (mut toggled, _) in &mut query.iter() {
+        if toggled.0 {
+            if input.just_pressed(KeyCode::Return) {
+                toggled.0 = false;
+            }
+        }
+    }
+}
+
+fn text_button_system(
+    input: Res<Input<KeyCode>>,
+    mut editor: ResMut<EditorCommands>,
+    mut query: Query<With<Button, (&ButtonToggled, &ButtonFunction, &Children)>>,
+    mut mutated: Query<With<Button, (Mutated<ButtonToggled>, &ButtonFunction, &Children)>>,
+    texts: Query<Mut<Text>>,
+    mut selected: Query<(&Widget, &SelectablePickMesh)>,
+) {
+    for (toggled, function, children) in &mut mutated.iter() {
+        if toggled.0 {
+            match function {
+                ButtonFunction::Save => {}
+                ButtonFunction::AddComponent => {
+                    for &child in children.iter() {
+                        texts.get_mut::<Text>(child).unwrap().value.clear();
+                    }
+                }
+            }
+        } else {
+            match function {
+                ButtonFunction::Save => {}
+                ButtonFunction::AddComponent => {
+                    for &child in children.iter() {
+                        let mut component_name = "Add component".to_string();
+                        mem::swap(
+                            &mut texts.get_mut::<Text>(child).unwrap().value,
+                            &mut component_name,
+                        );
+                        for (widget, selected) in &mut selected.iter() {
+                            if selected.selected() {
+                                let component = DefaultProperty(&component_name).default().unwrap();
+                                editor.insert_one(widget.0, component);
+                                editor.sync_one_to_world(widget.0, component_name.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (toggled, function, children) in &mut query.iter() {
+        if toggled.0 {
+            match function {
+                ButtonFunction::Save => {}
+                ButtonFunction::AddComponent => {
+                    let mut text = String::new();
+                    for keycode in input.get_just_pressed() {
+                        text.push_str(keycode.display().as_str());
+                    }
+                    if input.pressed(KeyCode::LShift) {
+                        text.make_ascii_uppercase()
+                    }
+                    for &child in children.iter() {
+                        texts.get_mut::<Text>(child).unwrap().value.push_str(&text);
+                    }
+                    if input.just_pressed(KeyCode::Back) {
+                        for &child in children.iter() {
+                            texts.get_mut::<Text>(child).unwrap().value.pop();
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -515,10 +805,24 @@ fn save_system(
     editor: Res<Editor>,
     registry: Res<TypeRegistry>,
     assets: Res<Assets<Scene>>,
+    mut query: Query<With<Button, (&ButtonFunction, Mutated<Interaction>)>>,
 ) {
     if input.pressed(KeyCode::LControl) && input.just_pressed(KeyCode::S) {
         editor
             .write("assets/prefab.scn", &registry, &assets)
             .unwrap();
+    }
+    for (function, interaction) in &mut query.iter() {
+        match *interaction {
+            Interaction::Clicked => match function {
+                ButtonFunction::Save => {
+                    editor
+                        .write("assets/prefab.scn", &registry, &assets)
+                        .unwrap();
+                }
+                _ => {}
+            },
+            _ => {}
+        }
     }
 }

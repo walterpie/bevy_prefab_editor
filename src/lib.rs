@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use bevy::prelude::*;
 
+pub mod display;
 pub mod editor;
 pub mod entity;
 
