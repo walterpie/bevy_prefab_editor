@@ -1,4 +1,4 @@
-use std::fs;
+use std::fs::{self, File};
 use std::mem;
 use std::path::Path;
 
@@ -6,7 +6,7 @@ use bevy::asset::AssetServerError;
 use bevy::ecs::IntoThreadLocalSystem;
 use bevy::input::mouse::*;
 use bevy::prelude::*;
-use bevy::property::DynamicProperties;
+use bevy::property::{erased_serde, DeserializeProperty, DynamicProperties};
 use bevy::scene;
 use bevy::type_registry::*;
 use bevy_fly_camera::*;
@@ -264,6 +264,8 @@ fn main() {
         .init_resource::<Editor>()
         .init_resource::<EditorCommands>()
         .init_resource::<EditorMode>()
+        .init_resource::<DefaultBundles>()
+        .init_resource::<DefaultProperties>()
         .add_startup_system(setup.system())
         .add_startup_system(setup_thread_local.thread_local_system())
         .add_system(save_system.system())
@@ -295,6 +297,9 @@ fn setup(
     mut commands: Commands,
     _editor: ResMut<EditorCommands>,
     asset_server: Res<AssetServer>,
+    registry: Res<TypeRegistry>,
+    mut default_bundles: ResMut<DefaultBundles>,
+    mut default_properties: ResMut<DefaultProperties>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let font = asset_server
@@ -390,6 +395,29 @@ fn setup(
                 });
         });
 
+    let bundles_path: &Path = "assets/editor_bundles.ron".as_ref();
+    let properties_path: &Path = "assets/editor_properties.ron".as_ref();
+
+    let property = registry.property.read();
+
+    if bundles_path.exists() {
+        let text = fs::read_to_string(bundles_path).unwrap();
+        let mut deserializer = ::ron::Deserializer::from_str(&text).unwrap();
+        let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
+        let dynamic = DynamicProperties::deserialize(&mut deserializer, &property).unwrap();
+        *default_bundles =
+            DefaultBundles::from_dynamic(&dynamic.as_properties().unwrap().to_dynamic());
+    }
+
+    if properties_path.exists() {
+        let text = fs::read_to_string(properties_path).unwrap();
+        let mut deserializer = ::ron::Deserializer::from_str(&text).unwrap();
+        let mut deserializer = erased_serde::Deserializer::erase(&mut deserializer);
+        let dynamic = DynamicProperties::deserialize(&mut deserializer, &property).unwrap();
+        *default_properties =
+            DefaultProperties::from_dynamic(&dynamic.as_properties().unwrap().to_dynamic());
+    }
+
     // let mut pbr = DefaultBundle("PbrComponents").default().unwrap();
     // pbr.add(Asset::<Mesh>::new("assets/bed.gltf").to_dynamic());
     // pbr.add(IntoAsset::<_, StandardMaterial>::new(Color::rgb(1.0, 1.0, 1.0)).to_dynamic());
@@ -461,6 +489,7 @@ fn button_enter_system(
 
 fn text_button_system(
     input: Res<Input<KeyCode>>,
+    default_properties: Res<DefaultProperties>,
     mut editor: ResMut<EditorCommands>,
     mut query: Query<With<Button, (&ButtonToggled, &ButtonFunction, &Children)>>,
     mut mutated: Query<With<Button, (Mutated<ButtonToggled>, &ButtonFunction, &Children)>>,
@@ -489,7 +518,7 @@ fn text_button_system(
                         );
                         for (widget, selected) in &mut selected.iter() {
                             if selected.selected() {
-                                let component = DefaultProperty(&component_name).default().unwrap();
+                                let component = default_properties.get(&component_name).unwrap();
                                 editor.insert_one(widget.0, component);
                                 editor.sync_one_to_world(widget.0, component_name.clone());
                             }
@@ -805,11 +834,33 @@ fn save_system(
     editor: Res<Editor>,
     registry: Res<TypeRegistry>,
     assets: Res<Assets<Scene>>,
+    default_bundles: Res<DefaultBundles>,
+    default_properties: Res<DefaultProperties>,
     mut query: Query<With<Button, (&ButtonFunction, Mutated<Interaction>)>>,
 ) {
     if input.pressed(KeyCode::LControl) && input.just_pressed(KeyCode::S) {
         editor
             .write("assets/prefab.scn", &registry, &assets)
+            .unwrap();
+
+        let file = File::create("assets/editor_bundles.ron").unwrap();
+        let mut serializer = ::ron::Serializer::new(file, Some(Default::default()), false).unwrap();
+        let mut serializer = erased_serde::Serializer::erase(&mut serializer);
+        default_bundles
+            .to_dynamic()
+            .serializable(&registry.property.read())
+            .borrow()
+            .erased_serialize(&mut serializer)
+            .unwrap();
+
+        let file = File::create("assets/editor_properties.ron").unwrap();
+        let mut serializer = ::ron::Serializer::new(file, Some(Default::default()), false).unwrap();
+        let mut serializer = erased_serde::Serializer::erase(&mut serializer);
+        default_properties
+            .to_dynamic()
+            .serializable(&registry.property.read())
+            .borrow()
+            .erased_serialize(&mut serializer)
             .unwrap();
     }
     for (function, interaction) in &mut query.iter() {
@@ -818,6 +869,28 @@ fn save_system(
                 ButtonFunction::Save => {
                     editor
                         .write("assets/prefab.scn", &registry, &assets)
+                        .unwrap();
+
+                    let file = File::create("assets/editor_bundles.ron").unwrap();
+                    let mut serializer =
+                        ::ron::Serializer::new(file, Some(Default::default()), false).unwrap();
+                    let mut serializer = erased_serde::Serializer::erase(&mut serializer);
+                    default_bundles
+                        .to_dynamic()
+                        .serializable(&registry.property.read())
+                        .borrow()
+                        .erased_serialize(&mut serializer)
+                        .unwrap();
+
+                    let file = File::create("assets/editor_properties.ron").unwrap();
+                    let mut serializer =
+                        ::ron::Serializer::new(file, Some(Default::default()), false).unwrap();
+                    let mut serializer = erased_serde::Serializer::erase(&mut serializer);
+                    default_properties
+                        .to_dynamic()
+                        .serializable(&registry.property.read())
+                        .borrow()
+                        .erased_serialize(&mut serializer)
                         .unwrap();
                 }
                 _ => {}
