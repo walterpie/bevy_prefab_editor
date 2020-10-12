@@ -1,7 +1,7 @@
 {
     "type": "bevy_prefab_editor::entity::DefaultBundles",
     "map": {
-        "bevy_prefab_editor::entity::EditorBundle": {
+        "PbrComponents": {
             "type": "bevy_prefab_editor::entity::EditorBundle",
             "seq": [
                 {
@@ -95,6 +95,46 @@
                                     },
                                 },
                             ],
+                        },
+                    },
+                },
+                {
+                    "type": "Transform",
+                    "map": {
+                        "value": {
+                            "type": "Mat4",
+                            "value": (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+                        },
+                    },
+                },
+                {
+                    "type": "DefaultComponent<GlobalTransform>",
+                    "map": {},
+                },
+            ],
+        },
+        "LightComponents": {
+            "type": "bevy_prefab_editor::entity::EditorBundle",
+            "seq": [
+                {
+                    "type": "Light",
+                    "map": {
+                        "color": {
+                            "type": "Color",
+                            "value": (
+                                red: 1,
+                                green: 1,
+                                blue: 1,
+                                alpha: 1,
+                            ),
+                        },
+                        "fov": 1.0471976,
+                        "depth": {
+                            "type": "Range<f32>",
+                            "value": (
+                                start: 0.1,
+                                end: 50,
+                            ),
                         },
                     },
                 },

@@ -7,6 +7,28 @@
                 "path": "",
             },
         },
+        "Light": {
+            "type": "Light",
+            "map": {
+                "color": {
+                    "type": "Color",
+                    "value": (
+                        red: 1,
+                        green: 1,
+                        blue: 1,
+                        alpha: 1,
+                    ),
+                },
+                "fov": 1.0471976,
+                "depth": {
+                    "type": "Range<f32>",
+                    "value": (
+                        start: 0.1,
+                        end: 50,
+                    ),
+                },
+            },
+        },
         "RenderPipelines": {
             "type": "RenderPipelines",
             "map": {
@@ -55,28 +77,6 @@
                 },
             },
         },
-        "Light": {
-            "type": "Light",
-            "map": {
-                "color": {
-                    "type": "Color",
-                    "value": (
-                        red: 1,
-                        green: 1,
-                        blue: 1,
-                        alpha: 1,
-                    ),
-                },
-                "fov": 1.0471976,
-                "depth": {
-                    "type": "Range<f32>",
-                    "value": (
-                        start: 0.1,
-                        end: 50,
-                    ),
-                },
-            },
-        },
         "Draw": {
             "type": "Draw",
             "map": {
@@ -84,12 +84,12 @@
                 "is_transparent": false,
             },
         },
-        "MainPass": {
-            "type": "MainPass",
-            "map": {},
-        },
         "DefaultComponent<GlobalTransform>": {
             "type": "DefaultComponent<GlobalTransform>",
+            "map": {},
+        },
+        "MainPass": {
+            "type": "MainPass",
             "map": {},
         },
         "IntoAsset<Color, StandardMaterial>": {

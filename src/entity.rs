@@ -215,14 +215,12 @@ impl DefaultBundles {
 
     pub fn from_dynamic(dynamic: &DynamicProperties) -> Self {
         // we don't check for type_name, because std::any::type_name is not reliable
-        let map = dynamic
-            .props
-            .iter()
-            .map(|prop| {
-                let prop = prop.any().downcast_ref::<DynamicProperties>().unwrap();
-                (prop.type_name.clone(), EditorBundle::from_dynamic(prop))
-            })
-            .collect();
+        let mut map = HashMap::new();
+        for (name, &index) in &dynamic.prop_indices {
+            let prop = &dynamic.props[index];
+            let prop = prop.any().downcast_ref::<DynamicProperties>().unwrap();
+            map.insert(name.to_string(), EditorBundle::from_dynamic(prop));
+        }
         Self { map }
     }
 }
