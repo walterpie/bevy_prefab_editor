@@ -417,15 +417,6 @@ fn setup(
         *default_properties =
             DefaultProperties::from_dynamic(&dynamic.as_properties().unwrap().to_dynamic());
     }
-
-    // let mut pbr = DefaultBundle("PbrComponents").default().unwrap();
-    // pbr.add(Asset::<Mesh>::new("assets/bed.gltf").to_dynamic());
-    // pbr.add(IntoAsset::<_, StandardMaterial>::new(Color::rgb(1.0, 1.0, 1.0)).to_dynamic());
-    // let mut light = DefaultBundle("LightComponents").default().unwrap();
-    // light.add(Light::default().to_dynamic());
-    // light.add(Transform::from_translation(Vec3::new(5.0, 5.0, 5.0)).to_dynamic());
-    // light.add(DefaultComponent::<GlobalTransform>::default().to_dynamic());
-    // editor.spawn(pbr).spawn(light);
 }
 
 fn setup_thread_local(world: &mut World, resources: &mut Resources) {
